@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: GPL-3.0
+
+pragma solidity >=0.7.0 <0.9.0;
+
+
+contract HoneyMoonTripAdvisor {
+
+    address internal admin;
+
+
+
+    struct ReceptionStaff {
+        // The address of the owner
+        address owner;
+        // The email of the advisor incases of complaints to resolve issue before step of banning account will take place
+        string email;
+        // Image of the location 
+        string imageLink;
+        // The location for the honeymoon trip
+        string location;
+        // What you will be offering at the stated price
+        string features;
+        // Used for evaluating if advisor is banned or not
+        bool isBanned;
+        // The time-length of their stay at the chosen location
+        uint duration;
+        // The cost of acquiring our service
+        uint price; 
+        // The end date of his latest booking
+        uint availableTime;
+        // The amount of times people have complained after using his service
+        uint complaint;
+    } 
+
+
+    struct Complaint{
+        address booker;
+        string complaints;
+        address tripadvisor;
+    }
+
+    mapping(uint=> Complaint ) public complaint;
+
+    //total complaints
+    uint totalComplains = 0;
+
+    //A map function to keep details of previous booking between an advisor and a booker containing start and end date
+    // mapping(address => BookingDetails) public bookingDetails;
+
+    // a map function to link the boooker to the trip advisor 
+    // will be require before complaints can be accepted
+    mapping(address => address) public bookingsLog;
+
+    mapping (uint => ReceptionStaff) public receptionstaff;
+
+
+    // This will return a true or false associated with an address
+    // This will be used by the require function to prevent multiple accounts with one address
+    mapping (address=> bool) public isAdvisor;
+
+
+    // map address to the index with which it was saved so we can find the advisor details from its address easily
+    mapping (address=> uint) public advisorLocation;
+
+
+    // This will keep the end date of the staffs booking based on address
+    // This will be combined witth a required function later on as we go
+    mapping (address => uint)  public isBooked;
+
+
+
+    // An unsigned integer variable to keep track of how many Advisors we have currently.
+    uint internal totalAdvisor = 0;
+
+    constructor () {
+        admin = (msg.sender);
+    }
+
+    modifier verifyAddress(){
+        //The require function to make sure that an address does not create more than one account
+        require(isAdvisor[msg.sender] == false, "This address is already an advisor");
+        _;
+    }
+
+
+    // A function to add complaints but only if you have booked the trip advisor before
+    // We dont want to have just anyone complain without just cause
+    function sendComplaint(string memory _reason, address _tripadvisor) public returns(uint) {
+        require(bookingsLog[msg.sender] == _tripadvisor, "You do not have an active session with this advisor or have not booked this advisor before");
+        complaint[totalComplains] = Complaint(
+            msg.sender,
+            _reason,
+            _tripadvisor
+        );
+        totalComplains++;
+        uint advisorIndex = advisorLocation[_tripadvisor];
+    
+        uint _advisorComplaint = (receptionstaff[advisorIndex].complaint);
+
+        if(_advisorComplaint >= 2){
+            (receptionstaff[advisorIndex].isBanned) = true;
+        }
+        else{
+            receptionstaff[advisorIndex].complaint  = _advisorComplaint + 1;
+        }
+
+        return _advisorComplaint;
+
+    } 
+
+    function editDetails(
+        string memory _email,
+        string memory _imagelink,
+        string memory _location,
+        string memory _features,
+        uint _duration,
+        uint _price
+    )public {
+        require( isAdvisor[msg.sender], "You are not a trip advisor");
+        uint advisorArrayIndex = advisorLocation[msg.sender];
+        ReceptionStaff storage adviserDet = receptionstaff[advisorArrayIndex];
+        adviserDet.email = _email; 
+        adviserDet.imageLink = _imagelink; 
+        adviserDet.location = _location; 
+        adviserDet.features = _features; 
+        adviserDet.duration = _duration; 
+        adviserDet.price = _price; 
+    }
+
+
+
+
+    // A function to add a user as an advisor for honey moon trips
+    function addAdvisor(
+        string memory _email,
+        string memory _imagelink,
+        string memory _location,
+        string memory _features,
+        uint _duration,
+        uint _price
+    )
+    public verifyAddress 
+    {
+        receptionstaff[totalAdvisor] = ReceptionStaff(
+            (msg.sender),
+            _email,
+            _imagelink,
+            _location,
+            _features,
+            false,
+            _duration,
+            _price,
+            0,
+            0
+        );
+
+        advisorLocation[msg.sender] = totalAdvisor; 
+
+        // Perform incrememnt on total advisor
+        // Increase the value of the totalAdvisors we have by 1
+        totalAdvisor = totalAdvisor + 1;
+
+        // Set the address to be true to show that it is an advisor
+        isAdvisor[msg.sender] = true;
+
+    }
+
+    
+
+    function banAdvisor (
+        address _advisorAddress
+    ) public  {
+        require((msg.sender)==admin, "only the admin has the right to ban a tripadvisor");
+        uint advisorIndex = advisorLocation[_advisorAddress];
+        (receptionstaff[advisorIndex].isBanned) = true;
+    }
+
+
+    function removeBan (
+        address _advisorAddress
+    ) public  {
+        require((msg.sender)==admin, "only the admin has the right to ban a tripadvisor");
+        uint advisorIndex = advisorLocation[_advisorAddress];
+        (receptionstaff[advisorIndex].isBanned) = false;
+    }
+
+
+
+
+
+    function bookTripWithAdvisor(address payable _advisorAddress, uint _startDate) public  returns(address booker, address tripAdvisor, uint StartPeriod, uint Price){
+        uint starter = _startDate;
+        require(_startDate > (block.timestamp), "This date has either passed or is too close");
+        require((isBooked[_advisorAddress]) < starter, "He is all booked up");
+        uint advisorIndexZ = (advisorLocation[_advisorAddress]);
+        bool status = (receptionstaff[advisorIndexZ].isBanned);
+        require(!status, "This Tripadvisor has been banned from the platform");
+        uint advPrice = (receptionstaff[advisorIndexZ].price);
+        // bool sent = _advisorAddress.send(advPrice);
+        // require(sent, "couldnt send amount");
+        bookingsLog[msg.sender] = _advisorAddress;
+        uint _duration  = receptionstaff[advisorIndexZ].duration;
+        uint _endDate = _startDate + _duration;
+        isBooked[_advisorAddress] = _endDate;
+
+        return (
+            (msg.sender),
+            _advisorAddress,
+            _startDate,
+            advPrice
+        );
+
+    }
+
+    function getTotalAdvisor() public view returns(uint){
+        return(totalAdvisor);
+    }
+
+}
